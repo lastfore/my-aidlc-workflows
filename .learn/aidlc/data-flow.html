@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>计划问句的字段变化</title>
+<style>
+  :root {
+    color-scheme: light;
+    --ink: #1c1915;
+    --muted: #5c564c;
+    --line: #e4ddd2;
+    --paper: #faf7f2;
+    --card: #fff;
+    --accent: #8a4b08;
+    --accent-soft: #f3e6d4;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 16px/1.55 "Segoe UI", "PingFang SC", "Noto Sans SC", sans-serif;
+    color: var(--ink);
+    background: var(--paper);
+  }
+  header, main { max-width: 920px; margin: 0 auto; padding: 24px 20px; }
+  header { padding-bottom: 0; }
+  h1 { font-size: 1.35rem; font-weight: 650; margin: 0 0 8px; }
+  .banner {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 0 0 12px;
+  }
+  .banner p { margin: 0 0 8px; }
+  .banner p:last-child { margin: 0; }
+  .tag {
+    display: inline-block;
+    font-size: 0.85rem;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-radius: 999px;
+    padding: 0 8px;
+    margin-right: 6px;
+  }
+  .controls { display: flex; gap: 8px; margin: 12px 0; }
+  button {
+    font: inherit;
+    background: var(--card);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 6px 12px;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button[aria-current="step"] {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  ol.stages { list-style: none; padding: 0; margin: 0 0 16px; display: flex; flex-wrap: wrap; gap: 8px; }
+  ol.stages li { margin: 0; }
+  article {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  article h2 { margin: 0 0 4px; font-size: 1.15rem; }
+  .meta { color: var(--muted); margin: 0 0 12px; }
+  dl { margin: 0; }
+  dt { font-weight: 650; margin-top: 10px; }
+  dd { margin: 2px 0 0; }
+  code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 0.92em; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>计划问句的字段变化</h1>
+  <div class="banner">
+    <p><span class="tag">正在播放</span><code>/aidlc Build a notes app</code>。空工作区，描述开头没有计划名。第二次调用里，指挥提议的计划用测试里出现过的 <code>bugfix</code>。两条编号是运行时现铸的，页面写成「第一次编号」「第二次编号」。</p>
+    <p><span class="tag">推断</span>这句描述和 <code>bugfix</code> 没有出现在同一次测试里。测试锁的是另一句描述，加上 <code>--propose bugfix</code>。页面按同一条路径把它们接在一起。</p>
+    <p>这不是实时数据。设计原因、分支和风险以 <a href="execution-flow.md">execution-flow.md</a> 为准。</p>
+  </div>
+  <div class="controls">
+    <button type="button" id="prev">上一步</button>
+    <button type="button" id="next">下一步</button>
+  </div>
+</header>
+<main>
+  <ol class="stages" id="stage-list"></ol>
+  <article id="detail"></article>
+</main>
+<script>
+const steps = [
+  {
+    name: "原样转发",
+    after: "人的描述还是一整段参数，指挥还没有拆旗标。",
+    input: "人的 /aidlc Build a notes app",
+    output: "第一次 next 的参数仍是整段 Build a notes app",
+    changed: "还没有引擎里的字段。描述仍是一整段，旗标没有被指挥拆开。",
+    source: "harness/cursor/skills/aidlc/SKILL.md:39",
+    symbol: "The Forwarding Loop"
+  },
+  {
+    name: "读成自由文本",
+    after: "这段参数变成工作描述，读法是自由文本。",
+    input: "整段 Build a notes app",
+    output: "readNextLine 给出 { kind: \"words\" }，flags.intent 写成 Build a notes app",
+    changed: "一整段参数收成 flags.intent。读法是 words。这里还不写问题文件，也没有计划名。",
+    source: "core/tools/aidlc-lib.ts:40012",
+    symbol: "readNextLine"
+  },
+  {
+    name: "存下空计划的请求",
+    after: "描述落成一条问题文件，来源是开工前的请求，计划名还是空的。",
+    input: "flags.intent 为 Build a notes app",
+    output: "一条问题：text 是这段描述，origin 是 front，proposedScope 是空字符串，proposal 是 true，id 是第一次编号",
+    changed: "自由文本变成文件。新出现 id、origin、proposedScope、proposal、createdAt。proposedScope 仍是空的。",
+    source: "core/tools/aidlc-orchestrate.ts:7667",
+    symbol: "saveQuestion"
+  },
+  {
+    name: "打出提议步骤",
+    after: "下一步变成一条 print，请指挥提议计划，并带上这条问题的编号。",
+    input: "刚存下的那条空计划请求",
+    output: "{ kind: \"print\", message }。message 请指挥读描述、提议一个计划，再跑 next --propose <plan> --request 加上第一次编号",
+    changed: "指挥收到的对象变成 kind 为 print。问题文件的字段没变，它的 id 写进了 message。",
+    source: "core/tools/aidlc-orchestrate.ts:7681",
+    symbol: "printDirective"
+  },
+  {
+    name: "按请求读回",
+    after: "同一条问题被读回来，确认它仍是没有计划名的开工请求。",
+    input: "next --propose bugfix --request 加上第一次编号",
+    output: "读回的仍是 origin 为 front、proposedScope 为空的那条问题；描述改从文件的 text 取回",
+    changed: "问题文件没改。这次调用多了 --propose bugfix 和 --request。flags.intent 被设成文件里的 text。空的 proposedScope 不会写成 flags.scope。",
+    source: "core/tools/aidlc-orchestrate.ts:12152",
+    symbol: "readQuestion"
+  },
+  {
+    name: "存下计划确认",
+    after: "另存一条写上所提议计划的问题文件，问句指向这条新编号。",
+    input: "空计划的旧请求，加上提议 bugfix",
+    output: "新的一条问题：proposedScope 为 bugfix，text 仍是 Build a notes app，composedFrom 指向第一次编号。ask 的 question_id 是第二次编号。确认命令是 next --scope bugfix --request 加上第二次编号。换一个计划没有命令。",
+    changed: "新文件的 proposedScope 写成 bugfix。问句编号改用新的 id。第一条的 proposedScope 仍是空的。",
+    source: "core/tools/aidlc-orchestrate.ts:3927",
+    symbol: "saveQuestion"
+  },
+  {
+    name: "补上问句正文",
+    after: "这条 ask 带上给指挥看的短注，以及带编号的正文。",
+    input: "上一步的 scope-confirm 问句",
+    output: "同一条问句，多了 question_note 和 numbered_prose_question。编号正文是问句、三个选项、再加一行 Other，以及回复提示。",
+    changed: "新增 question_note 和 numbered_prose_question。三个选项的 label 和命令不变。",
+    source: "core/tools/aidlc-directive.ts:1865",
+    symbol: "withAgentNotes"
+  },
+  {
+    name: "校验后结束回合",
+    after: "标准输出一条计划确认问句；指挥按三个选项展示，然后结束这一回合。",
+    input: "补过正文的 ask",
+    output: "校验通过后，标准输出上一行 JSON。指挥展示三个选项并结束回合。",
+    changed: "问句字段不再增加。输出位置变成标准输出，并且这一回合在问句上停下。",
+    source: "core/tools/aidlc-orchestrate.ts:2121",
+    symbol: "validateDirective"
+  }
+];
+
+const list = document.getElementById("stage-list");
+const detail = document.getElementById("detail");
+let index = 0;
+
+steps.forEach((step, i) => {
+  const item = document.createElement("li");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = (i + 1) + ". " + step.name;
+  button.addEventListener("click", () => show(i));
+  item.appendChild(button);
+  list.appendChild(item);
+});
+
+function show(nextIndex) {
+  index = Math.max(0, Math.min(steps.length - 1, nextIndex));
+  const step = steps[index];
+  const buttons = list.querySelectorAll("button");
+  buttons.forEach((button, i) => {
+    if (i === index) button.setAttribute("aria-current", "step");
+    else button.removeAttribute("aria-current");
+  });
+  detail.replaceChildren();
+  const title = document.createElement("h2");
+  title.textContent = step.name;
+  const meta = document.createElement("p");
+  meta.className = "meta";
+  meta.textContent = "第 " + (index + 1) + " 步，共 " + steps.length + " 步。这一步之后：" + step.after;
+  const fields = document.createElement("dl");
+  addRow(fields, "输入", step.input);
+  addRow(fields, "输出", step.output);
+  addRow(fields, "相对上一步变化的字段", step.changed);
+  addRow(fields, "源码", step.source + "  " + step.symbol);
+  detail.append(title, meta, fields);
+  document.getElementById("prev").disabled = index === 0;
+  document.getElementById("next").disabled = index === steps.length - 1;
+}
+
+function addRow(fields, label, text) {
+  const term = document.createElement("dt");
+  term.textContent = label;
+  const value = document.createElement("dd");
+  value.textContent = text;
+  fields.append(term, value);
+}
+
+document.getElementById("prev").addEventListener("click", () => show(index - 1));
+document.getElementById("next").addEventListener("click", () => show(index + 1));
+show(0);
+</script>
+</body>
+</html>

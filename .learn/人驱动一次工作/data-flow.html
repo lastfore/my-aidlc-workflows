@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>人驱动一次工作：字段怎么变</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f6f4ef;
+    --card: #fffdf8;
+    --ink: #1c1915;
+    --muted: #5c564c;
+    --line: #e2d9cc;
+    --accent: #0f6e6b;
+    --accent-ink: #ffffff;
+    --changed: #8a3b12;
+    --changed-bg: #fff1e6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.55;
+  }
+  header, main { max-width: 52rem; margin: 0 auto; padding: 1.25rem 1.25rem 0; }
+  header { padding-bottom: 0.5rem; }
+  h1 { font-size: 1.35rem; margin: 0 0 0.6rem; }
+  .banner, .not-live {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.75rem 0.9rem;
+    margin: 0 0 0.6rem;
+  }
+  .not-live { color: var(--muted); }
+  .tag {
+    display: inline-block;
+    margin-right: 0.35rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: 4px;
+    background: var(--changed-bg);
+    color: var(--changed);
+    font-size: 0.85rem;
+  }
+  nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    margin: 0.8rem 0;
+  }
+  button {
+    font: inherit;
+    border: 1px solid var(--accent);
+    background: var(--card);
+    color: var(--accent);
+    border-radius: 6px;
+    padding: 0.35rem 0.75rem;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.4; cursor: default; }
+  button.primary { background: var(--accent); color: var(--accent-ink); }
+  ol.stages {
+    list-style: none;
+    padding: 0;
+    margin: 0.4rem 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    width: 100%;
+  }
+  ol.stages button {
+    width: 100%;
+    text-align: left;
+    border-color: var(--line);
+    color: var(--ink);
+  }
+  ol.stages button[aria-current="step"] {
+    border-color: var(--accent);
+    background: #e7f4f3;
+  }
+  article {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 1rem 1.1rem 1.2rem;
+    margin-bottom: 2rem;
+  }
+  article h2 { margin: 0 0 0.8rem; font-size: 1.15rem; }
+  h3 { margin: 1rem 0 0.35rem; font-size: 0.95rem; }
+  dl { margin: 0; }
+  dt { color: var(--muted); font-size: 0.85rem; }
+  dd { margin: 0.15rem 0 0.7rem; }
+  .changed {
+    background: var(--changed-bg);
+    border-radius: 6px;
+    padding: 0.55rem 0.7rem;
+  }
+  ul.sources { margin: 0.2rem 0 0; padding-left: 1.1rem; }
+  code { font-family: Consolas, "Sarasa Mono SC", monospace; font-size: 0.92em; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>字段怎么变</h1>
+  <p class="banner"><span class="tag">推断</span>正在播放的示例：工作记录里 <code>Scope</code> 为 <code>poc</code>，<code>Current Stage</code> 为 <code>intent-capture</code>，复选框为 in-progress。人继续这次工作。第一次命令是 <code>engine orchestrate next</code>（没有额外参数）。站做完后是 <code>report --stage intent-capture --result awaiting-approval</code>，人批准后再 <code>report --stage intent-capture --result approved --user-input "Approve"</code>。源码里这些命令前面还有 <code>{{INVOKE}}</code>。没有一份测试夹具把当前站设成这一站；<code>t114</code> 测试 13 用的是 <code>next --stage intent-capture</code>，那是跳跃，不作为本页入口。</p>
+  <p class="not-live">这不是实时数据。设计原因、分支和风险以 <a href="execution-flow.md">execution-flow.md</a> 为准。</p>
+</header>
+<main>
+  <nav>
+    <button id="prev" type="button">上一步</button>
+    <button id="next" class="primary" type="button">下一步</button>
+    <ol class="stages" id="stage-list"></ol>
+  </nav>
+  <article id="detail" aria-live="polite"></article>
+</main>
+<script>
+const steps = [
+  {
+    name: "向引擎要下一步",
+    input: "人继续这次工作的原话。工作记录里已有 Scope、Current Stage 和复选框。",
+    output: "一次 engine orchestrate next。本示例没有额外参数。",
+    changed: "请求从一句人话变成 next 的参数。工作记录里的 Current Stage、复选框、Scope 没有被改写。",
+    dest: "交给引擎。这一步不把生命周期转移写入工作记录。",
+    sources: [
+      ["harness/cursor/skills/aidlc/SKILL.md", "33-44", "转发循环"],
+      ["core/tools/aidlc.ts", "1122-1128", "engine-orchestrate"],
+      ["core/tools/aidlc-orchestrate.ts", "11349-11357", "handleNext"]
+    ]
+  },
+  {
+    name: "认定当前站仍在途",
+    input: "Current Stage 为 intent-capture，复选框为 in-progress。",
+    output: "派生判定「仍在途」。引擎留在这一站。",
+    changed: "没有新的落盘字段。派生结果是当前站仍在途，因此这一轮不去找下一站。Current Stage 仍是 intent-capture，复选框仍是 in-progress。",
+    dest: "判定留在引擎这一次 next 里，不写回工作记录，也不发给下一站。",
+    sources: [
+      ["core/tools/aidlc-orchestrate.ts", "14209-14221", "getField"],
+      ["core/tools/aidlc-orchestrate.ts", "14272-14282", "currentIsInFlight"]
+    ]
+  },
+  {
+    name: "交出这一站的 run-stage",
+    input: "仍在途的 intent-capture，以及编译图上的这一站节点。",
+    output: "一条通过合同检查的 directive：kind 为 run-stage，stage 为 intent-capture，gate 为 true。",
+    changed: "新出现 kind、stage、gate。同一次赋值还从节点抄来 phase（ideation）、lead_agent、mode（inline）和 produces（三份产物名）。",
+    dest: "交给 conductor。stdout 上这一条 directive。",
+    sources: [
+      ["core/tools/aidlc-orchestrate.ts", "10196-10217", "buildRunStageDirective"],
+      ["core/tools/aidlc-orchestrate.ts", "9946-9960", "computeGate"],
+      ["core/tools/aidlc-directive.ts", "270", "RunStageDirective"]
+    ]
+  },
+  {
+    name: "附上要读的正文",
+    input: "上一步那条 run-stage。kind、stage、gate 已经写好。",
+    output: "同一条 directive，多了阶段文件路径；条件成立时再多 conductor 的执行要求。",
+    changed: "stage_file 指向 ideation 下的 intent-capture 正文。工作流的第一份 run-stage，或这个聊天还没有 persona 时，多一个 conductor_persona。kind、stage、gate 不变。",
+    dest: "仍是交给 conductor 的那一条 directive。stage_file 与 kind、gate 在发出前就在同一次赋值里。",
+    sources: [
+      ["core/tools/aidlc-orchestrate.ts", "9077-9078", "stageFileFor"],
+      ["core/tools/aidlc-orchestrate.ts", "10230", "stage_file"],
+      ["core/tools/aidlc-orchestrate.ts", "10389-10412", "readConductorPersona"]
+    ]
+  },
+  {
+    name: "按站正文澄清意图",
+    input: "带 stage_file 的 run-stage，加上人的回答。",
+    output: "提问记录、意图说明、干系人图三份产物。",
+    changed: "intent-capture-questions.md 里出现问题，[Answer] 先空着，人答完后写上选择。intent-statement.md 和 stakeholder-map.md 写到这一站的记录目录。工作记录的复选框还不变成通过。",
+    dest: "写到记录目录 ideation/intent-capture/ 下的三份文件。编号选项给人看，围栏原文不贴进对话。",
+    sources: [
+      ["core/aidlc-common/stages/ideation/intent-capture.md", "101-103", "Step 2"],
+      ["core/aidlc-common/stages/ideation/intent-capture.md", "182-190", "Step 4"],
+      ["harness/cursor/skills/aidlc/question-rendering.md", "1-17", "编号散文"]
+    ]
+  },
+  {
+    name: "打开批准门",
+    input: "三份产物已写好。conductor 报告等待批准。",
+    output: "一条 print。人看到 Approve 和 Request Changes。",
+    changed: "复选框变成 awaiting-approval。print 上多了 next_stage（下一站的显示名，没有下一站则为空）和产物位置。kind 这一拍是 print。",
+    dest: "gate-start 写入工作记录。next_stage 和产物位置随 print 交给 conductor，再讲给人。",
+    sources: [
+      ["harness/cursor/skills/aidlc/SKILL.md", "114-115", "完成序列"],
+      ["core/tools/aidlc-orchestrate.ts", "22810-22831", "gate-start"],
+      ["core/tools/aidlc-orchestrate.ts", "22944-22950", "next_stage"]
+    ]
+  },
+  {
+    name: "把批准写回工作记录",
+    input: "人选择 Approve。复选框已是 awaiting-approval。",
+    output: "kind 为 done。工作还没结束时带 workflow_continues。",
+    changed: "工作记录里这一站记为通过。返回的 kind 变成 done。下一站要等再一次 next 才出现。",
+    dest: "approve 由 state 工具落账。done 交回 conductor。工作还要继续时，conductor 再问一次 next。下一站的正文不在这条路径里。",
+    sources: [
+      ["core/tools/aidlc-orchestrate.ts", "20298-20311", "spawnState"],
+      ["core/tools/aidlc-state.ts", "8265", "handleApprove"],
+      ["core/tools/aidlc-orchestrate.ts", "23336-23343", "done"]
+    ]
+  }
+];
+
+const list = document.getElementById("stage-list");
+const detail = document.getElementById("detail");
+const prev = document.getElementById("prev");
+const next = document.getElementById("next");
+let index = 0;
+
+steps.forEach(function (step, i) {
+  const item = document.createElement("li");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = (i + 1) + ". " + step.name;
+  button.addEventListener("click", function () { show(i); });
+  item.appendChild(button);
+  list.appendChild(item);
+});
+
+function show(i) {
+  index = i;
+  const step = steps[i];
+  const buttons = list.querySelectorAll("button");
+  buttons.forEach(function (button, n) {
+    if (n === i) button.setAttribute("aria-current", "step");
+    else button.removeAttribute("aria-current");
+  });
+  prev.disabled = i === 0;
+  next.disabled = i === steps.length - 1;
+  const sources = step.sources.map(function (row) {
+    return "<li><code>" + row[0] + ":" + row[1] + "</code> <code>" + row[2] + "</code></li>";
+  }).join("");
+  detail.innerHTML =
+    "<h2>" + step.name + "</h2>" +
+    "<h3>业务对象输入</h3><p>" + step.input + "</p>" +
+    "<h3>业务对象输出</h3><p>" + step.output + "</p>" +
+    "<h3>相对上一步变化的字段</h3><p class=\"changed\">" + step.changed + "</p>" +
+    "<h3>写到哪里或发给谁</h3><p>" + step.dest + "</p>" +
+    "<h3>源码</h3><ul class=\"sources\">" + sources + "</ul>";
+}
+
+prev.addEventListener("click", function () { if (index > 0) show(index - 1); });
+next.addEventListener("click", function () { if (index < steps.length - 1) show(index + 1); });
+show(0);
+</script>
+</body>
+</html>
